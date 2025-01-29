@@ -28,7 +28,7 @@ Vector2      :: rl.Vector2
 Color        :: rl.Color
 
 state := struct {
-	width, height: i32,
+  width, height: i32,
   using options: struct {
     scale:     bool,
     wireframe: bool,
@@ -36,8 +36,8 @@ state := struct {
     grid:      bool,
   }
 } {
-	width  = WIDTH,
-	height = HEIGHT,
+  width  = WIDTH,
+  height = HEIGHT,
   options = {
     wave = true,
     grid = true,
@@ -232,8 +232,8 @@ draw_cube_wires :: proc(pos: Vector3, width, height, length: f32, color: Color) 
 }
 
 on_window_resized :: proc "c" (window: WindowHandle, width, height: i32) {
-	state.width  = width
-	state.height = height
+  state.width  = width
+  state.height = height
   gl.Viewport(0, 0, width, height)
 }
 
@@ -283,9 +283,9 @@ main :: proc() {
   im.StyleColorsDark()
 
   imgui_impl_glfw.InitForOpenGL(window, true)
-	defer imgui_impl_glfw.Shutdown()
-	imgui_impl_opengl3.Init()
-	defer imgui_impl_opengl3.Shutdown()
+  defer imgui_impl_glfw.Shutdown()
+  imgui_impl_opengl3.Init()
+  defer imgui_impl_opengl3.Shutdown()
 
   // MARK:init rlgl
   gl.Init(width, height)
@@ -336,7 +336,7 @@ main :: proc() {
       color.b = cast(u8) ((math.sin(time + 4.0) * 127.5 + 127.5))
     }
 
-		aspect_ratio := state.width / state.height
+    aspect_ratio := state.width / state.height
     mat_proj     := rl.MatrixPerspective(camera.fovy * rl.DEG2RAD, auto_cast aspect_ratio, 0.01, 1000.0)
     mat_view     := rl.MatrixLookAt(camera.pos, camera.target, camera.up)
 
@@ -427,11 +427,11 @@ main :: proc() {
     imgui_impl_opengl3.RenderDrawData(im.GetDrawData())
 
     when !DISABLE_DOCKING {
-			backup_current_window := glfw.GetCurrentContext()
-			im.UpdatePlatformWindows()
-			im.RenderPlatformWindowsDefault()
-			glfw.MakeContextCurrent(backup_current_window)
-		}
+      backup_current_window := glfw.GetCurrentContext()
+      im.UpdatePlatformWindows()
+      im.RenderPlatformWindowsDefault()
+      glfw.MakeContextCurrent(backup_current_window)
+    }
 
     glfw.SwapBuffers(window)
   }
