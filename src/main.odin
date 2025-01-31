@@ -232,8 +232,12 @@ draw_cube_wires :: proc(pos: Vector3, width, height, length: f32, color: Color) 
 }
 
 on_window_resized :: proc "c" (window: WindowHandle, width, height: i32) {
-  state.width  = width
-  state.height = height
+  if width == 0 || height == 0 {
+    return
+  }
+
+  state.width     = width
+  state.height    = height
   gl.Viewport(0, 0, width, height)
 }
 
@@ -316,6 +320,13 @@ main :: proc() {
 
   // MARK:loop
   for !glfw.WindowShouldClose(window) {
+    minimized := glfw.GetWindowAttrib(window, glfw.ICONIFIED)
+
+    if cast(bool) minimized {
+      glfw.WaitEvents()
+      continue
+    }
+
     glfw.PollEvents()
     gl.ClearScreenBuffers()
 
@@ -435,4 +446,6 @@ main :: proc() {
 
     glfw.SwapBuffers(window)
   }
+
+  a := 5
 }
