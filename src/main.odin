@@ -256,10 +256,7 @@ main :: proc() {
     glfw.WindowHint(glfw.OPENGL_DEBUG_CONTEXT, true)
   }
 
-  width:  i32 = WIDTH
-  height: i32 = HEIGHT
-
-  window := glfw.CreateWindow(width, height, "balls", nil, nil)
+  window := glfw.CreateWindow(WIDTH, HEIGHT, "balls", nil, nil)
   assert(window != nil, "GLFW: Could not create window.")
   defer glfw.DestroyWindow(window)
 
@@ -292,13 +289,13 @@ main :: proc() {
   defer imgui_impl_opengl3.Shutdown()
 
   // MARK:init rlgl
-  gl.Init(width, height)
+  gl.Init(WIDTH, HEIGHT)
   defer gl.Close()
 
-  gl.Viewport(0, 0, width, height)
+  gl.Viewport(0, 0, WIDTH, HEIGHT)
   gl.MatrixMode(gl.PROJECTION)
   gl.LoadIdentity()
-  gl.Ortho(0, cast(f64) width, cast(f64) height, 0, 0.0, 1.0)
+  gl.Ortho(0, WIDTH, HEIGHT, 0, 0.0, 1.0)
   gl.MatrixMode(gl.MODELVIEW)
   gl.LoadIdentity()
 
