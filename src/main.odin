@@ -19,26 +19,33 @@ RED      :: Color{ 230,  41,  55, 255 }
 RAYWHITE :: Color{ 245, 245, 245, 255 }
 DARKGRAY :: Color{  80,  80,  80, 255 }
 
-vec2  :: [2]f32
-vec3  :: [3]f32
-vec4  :: [4]f32
+vec2 :: [2]f32
+vec3 :: [3]f32
+vec4 :: [4]f32
+s16  :: i16
+s32  :: i32
+s64  :: i64
 
-VEC3_RIGHT   :: vec3{1, 0, 0}
-VEC3_UP      :: vec3{0, 1, 0}
-VEC3_FORWARD :: vec3{0, 0, 1}
+WORLD_RIGHT   :: vec3{1, 0, 0}
+WORLD_UP      :: vec3{0, 1, 0}
+WORLD_FORWARD :: vec3{0, 0, 1}
 
 Color :: rl.Color
 
 state := struct {
   window:        glfw.WindowHandle,
-  width, height: i32,
+  width, height: s32,
   
   using options: struct {
     scale:     bool,
     wireframe: bool,
     wave:      bool,
     grid:      bool,
+    ui_focus:  bool,
   },
+
+  camera:    Camera,
+  mouse_pos: vec2,
 } {
   width  = WIDTH,
   height = HEIGHT,
@@ -49,15 +56,12 @@ state := struct {
 }
 
 Camera :: struct {
-  using pos: vec3,
-  vel, dir:  vec3,
-  right, up: vec3,
-  
-  yaw, pitch:     f32,
-  fov, near, far: f32,
+  using pos:           vec3,
+  vel, dir, up, right: vec3,
+  yaw, pitch, fov:     f32,
 }
 
-on_window_resized :: proc "c" (window: glfw.WindowHandle, width, height: i32) {
+handle_window_resized :: proc "c" (window: glfw.WindowHandle, width, height: s32) {
   if width != 0 && height != 0 {
     state.width  = width
     state.height = height
@@ -65,7 +69,62 @@ on_window_resized :: proc "c" (window: glfw.WindowHandle, width, height: i32) {
   }
 }
 
-key_pressed :: proc(key: i32) -> bool {
+handle_key_input :: proc "c" (window: glfw.WindowHandle, key, scancode, action, mods: s32) {
+  if key == glfw.KEY_ESCAPE && action == glfw.PRESS {
+    state.ui_focus = !state.ui_focus
+    set_ui_focus(window)
+  }
+}
+
+handle_mouse_input :: proc "c" (window: glfw.WindowHandle, x, y: f64) {
+  using state
+
+  @(static) first_mouse_input := true
+  if first_mouse_input {
+    mouse_pos.x = cast(f32) x
+    mouse_pos.y = cast(f32) y
+    first_mouse_input = false
+  }
+
+  x_offset := cast(f32) x - mouse_pos.x
+  y_offset := mouse_pos.y - cast(f32) y
+
+  mouse_pos.x = cast(f32) x
+  mouse_pos.y = cast(f32) y
+
+  if !ui_focus {
+    SENSITIVITY :: 0.1
+
+    x_offset *= SENSITIVITY
+    y_offset *= SENSITIVITY
+
+    camera.yaw += x_offset
+
+         if camera.yaw >  180 do camera.yaw = -180
+    else if camera.yaw < -180 do camera.yaw =  180
+
+    camera.pitch += y_offset
+    camera.pitch = math.clamp(camera.pitch, -89.9, 89.9)
+
+    yaw_rad   := camera.yaw   * rl.DEG2RAD
+    pitch_rad := camera.pitch * rl.DEG2RAD
+
+    camera.dir.x = math.cos(yaw_rad) * math.cos(pitch_rad)
+    camera.dir.y = math.sin(pitch_rad)
+    camera.dir.z = math.sin(yaw_rad) * math.cos(pitch_rad)
+    
+    camera.dir   = linalg.normalize(camera.dir)
+    camera.right = linalg.normalize(linalg.cross(camera.dir, WORLD_UP))
+    camera.up    = linalg.normalize(linalg.cross(camera.right, camera.dir))
+  }
+}
+
+set_ui_focus :: proc "c" (window: glfw.WindowHandle) {
+  cursor_state: s32 = state.ui_focus ? glfw.CURSOR_NORMAL : glfw.CURSOR_DISABLED
+  glfw.SetInputMode(window, glfw.CURSOR, cursor_state)
+}
+
+key_pressed :: proc(key: s32) -> bool {
   return glfw.GetKey(state.window, key) == glfw.PRESS
 }
 
@@ -84,15 +143,18 @@ main :: proc() {
     glfw.WindowHint(glfw.OPENGL_DEBUG_CONTEXT, true)
   }
 
-  window := glfw.CreateWindow(WIDTH, HEIGHT, "balls", nil, nil)
-  assert(window != nil, "GLFW: Could not create window.")
-  defer glfw.DestroyWindow(window)
-  state.window = window
+  state.window = glfw.CreateWindow(WIDTH, HEIGHT, "balls", nil, nil)
+  assert(state.window != nil, "GLFW: Could not create window.")
+  defer glfw.DestroyWindow(state.window)
 
-  glfw.MakeContextCurrent(window)
+  set_ui_focus(state.window)
+
+  glfw.MakeContextCurrent(state.window)
   glfw.SwapInterval(1)
 
-  glfw.SetWindowSizeCallback(window, on_window_resized)
+  glfw.SetWindowSizeCallback(state.window, handle_window_resized)
+  glfw.SetCursorPosCallback(state.window, handle_mouse_input)
+  glfw.SetKeyCallback(state.window, handle_key_input)
 
   gl.LoadExtensions(cast(rawptr) glfw.GetProcAddress)
 
@@ -100,19 +162,24 @@ main :: proc() {
   im.CHECKVERSION()
   im.CreateContext()
   defer im.DestroyContext()
+    
+  style := im.GetStyle()
+  style.WindowRounding = 4
+  style.FrameRounding  = 4
+
   io := im.GetIO()
   io.ConfigFlags += {.NavEnableKeyboard, .NavEnableGamepad}
+
   when !DISABLE_DOCKING {
     io.ConfigFlags += {.DockingEnable, .ViewportsEnable}
 
-    style := im.GetStyle()
-    style.WindowRounding = 0
     style.Colors[im.Col.WindowBg].w = 1
   }
 
+  im.FontAtlas_AddFontFromFileTTF(io.Fonts, "res/Hack-Regular.ttf", 16.0)
   im.StyleColorsDark()
 
-  imgui_impl_glfw.InitForOpenGL(window, true)
+  imgui_impl_glfw.InitForOpenGL(state.window, true)
   defer imgui_impl_glfw.Shutdown()
   imgui_impl_opengl3.Init()
   defer imgui_impl_opengl3.Shutdown()
@@ -131,16 +198,13 @@ main :: proc() {
   gl.ClearColor(54, 56, 64, 255)
   gl.EnableDepthTest()
 
-  camera := Camera{}
-  camera.pos   = { 0, 50, -110 }
-  camera.right = VEC3_RIGHT
-  camera.up    = VEC3_UP
-  camera.dir   = VEC3_FORWARD
-  camera.yaw   = -90
-
-  camera.fov   = 90
-  camera.near  = 0.01
-  camera.far   = 1000.0
+  {
+    state.camera.pos   = { 0, 50, 0 }
+    state.camera.right = WORLD_RIGHT
+    state.camera.up    = WORLD_UP
+    state.camera.dir   = WORLD_FORWARD
+    state.camera.fov   = 90
+  }
 
   time      := 0.0
   last_time := 0.0
@@ -150,8 +214,8 @@ main :: proc() {
   color := Color{255, 255, 255, 255}
 
   // MARK:loop
-  for !glfw.WindowShouldClose(window) {
-    minimized := glfw.GetWindowAttrib(window, glfw.ICONIFIED)
+  for !glfw.WindowShouldClose(state.window) {
+    minimized := glfw.GetWindowAttrib(state.window, glfw.ICONIFIED)
 
     if cast(bool) minimized {
       glfw.WaitEvents()
@@ -159,37 +223,40 @@ main :: proc() {
     }
 
     glfw.PollEvents()
+
+    io.WantCaptureMouse    = !state.ui_focus
+    io.WantCaptureKeyboard = !state.ui_focus
     
     current_time := glfw.GetTime()
     delta_time   := current_time - last_time
     last_time     = current_time
     time         += delta_time
 
-    // camera movement
+    // MARK:camera movement
     {
       ACCELERATION :: 300
       MAX_SPEED    :: 200
       DAMPING      :: 10
 
       input: vec3
-      if key_pressed(glfw.KEY_W)          do input += camera.dir
-      if key_pressed(glfw.KEY_S)          do input -= camera.dir
-      if key_pressed(glfw.KEY_D)          do input += camera.right
-      if key_pressed(glfw.KEY_A)          do input -= camera.right
-      if key_pressed(glfw.KEY_SPACE)      do input += camera.up
-      if key_pressed(glfw.KEY_LEFT_SHIFT) do input -= camera.up
+      if key_pressed(glfw.KEY_W)          do input += state.camera.dir
+      if key_pressed(glfw.KEY_S)          do input -= state.camera.dir
+      if key_pressed(glfw.KEY_D)          do input += state.camera.right
+      if key_pressed(glfw.KEY_A)          do input -= state.camera.right
+      if key_pressed(glfw.KEY_SPACE)      do input += WORLD_UP
+      if key_pressed(glfw.KEY_LEFT_SHIFT) do input -= WORLD_UP
 
       if linalg.length(input) > 0 {
         input = linalg.normalize(input)
-        camera.vel = input * math.min(MAX_SPEED, linalg.length(camera.vel) + ACCELERATION * auto_cast delta_time)
+        state.camera.vel = input * math.min(MAX_SPEED, linalg.length(state.camera.vel) + ACCELERATION * auto_cast delta_time)
       } else {
-        camera.vel -= camera.vel * (DAMPING * auto_cast delta_time)
-        if linalg.length(camera.vel) < 0.01 {
-          camera.vel = {0, 0, 0}
+        state.camera.vel -= state.camera.vel * (DAMPING * auto_cast delta_time)
+        if linalg.length(state.camera.vel) < 0.01 {
+          state.camera.vel = {0, 0, 0}
         }
       }
       
-      camera.pos += camera.vel * auto_cast delta_time
+      state.camera.pos += state.camera.vel * auto_cast delta_time
     }
     
     gl.ClearScreenBuffers()
@@ -201,8 +268,8 @@ main :: proc() {
     }
 
     aspect_ratio := state.width / state.height
-    mat_proj     := rl.MatrixPerspective(camera.fov * rl.DEG2RAD, auto_cast aspect_ratio, 0.01, 1000.0)
-    mat_view     := rl.MatrixLookAt(camera.pos, camera.pos + camera.dir, camera.up)
+    mat_proj     := rl.MatrixPerspective(state.camera.fov * rl.DEG2RAD, auto_cast aspect_ratio, 0.01, 1000.0)
+    mat_view     := rl.MatrixLookAt(state.camera.pos, state.camera.pos + state.camera.dir, state.camera.up)
 
     gl.SetMatrixModelview(mat_view)
     gl.SetMatrixProjection(mat_proj)
@@ -244,6 +311,13 @@ main :: proc() {
       draw_grid(100, 1.0)
     }
 
+    {
+      XYZ_LINES_OFFSET :: vec3{0, 0, 0}
+      draw_line(XYZ_LINES_OFFSET, {10, 0, 0}, {255,   0,   0, 255})
+      draw_line(XYZ_LINES_OFFSET, {0, 10, 0}, {  0, 255,   0, 255})
+      draw_line(XYZ_LINES_OFFSET, {0, 0, 10}, {  0,   0, 255, 255})
+    }
+
     gl.DrawRenderBatchActive()
 
 // #define RLGL_SET_MATRIX_MANUALLY
@@ -269,16 +343,17 @@ main :: proc() {
     imgui_impl_opengl3.NewFrame()
     imgui_impl_glfw.NewFrame()
     im.NewFrame()
-    im.ShowDemoWindow()
 
-    if im.Begin("Options") {
-      im.Checkbox("Scale", &state.scale)
-      im.Checkbox("Wireframe", &state.wireframe)
-      im.Checkbox("Wave", &state.wave)
-      im.Checkbox("Grid", &state.grid)
-    }
-    im.End()
-
+    if state.ui_focus {
+      if im.Begin("Options") {
+        im.Checkbox("Scale", &state.scale)
+        im.Checkbox("Wireframe", &state.wireframe)
+        im.Checkbox("Wave", &state.wave)
+        im.Checkbox("Grid", &state.grid)
+      }
+      im.End()
+    }  
+  
     im.Render()
     imgui_impl_opengl3.RenderDrawData(im.GetDrawData())
 
@@ -289,6 +364,6 @@ main :: proc() {
       glfw.MakeContextCurrent(backup_current_window)
     }
 
-    glfw.SwapBuffers(window)
+    glfw.SwapBuffers(state.window)
   }
 }

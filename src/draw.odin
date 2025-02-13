@@ -48,6 +48,7 @@ draw_cube :: proc(pos: vec3, w, h, len: f32, color: Color) {
   x, y, z: f32 = 0.0, 0.0, 0.0
 
   gl.PushMatrix()
+  defer gl.PopMatrix()
 
   // NOTE: Be careful! Function order matters (rotate -> scale -> translate)
   gl.Translatef(pos.x, pos.y, pos.z)
@@ -55,6 +56,7 @@ draw_cube :: proc(pos: vec3, w, h, len: f32, color: Color) {
   //gl.Rotatef(45, 0, 1, 0);
 
   gl.Begin(gl.TRIANGLES)
+  defer gl.End()
   gl.Color4ub(color.r, color.g, color.b, color.a)
 
   // Front Face -----------------------------------------------------
@@ -110,20 +112,35 @@ draw_cube :: proc(pos: vec3, w, h, len: f32, color: Color) {
   gl.Vertex3f(x - w / 2, y - h / 2, z + len / 2)  // Bottom Left
   gl.Vertex3f(x - w / 2, y + h / 2, z + len / 2)  // Top Left
   gl.Vertex3f(x - w / 2, y - h / 2, z - len / 2)  // Bottom Right
+}
 
-  gl.End()
-  gl.PopMatrix()
+draw_line :: proc(pos, dir: vec3, color: Color) {
+  gl.PushMatrix()
+  defer gl.PopMatrix()
+
+  gl.Translatef(pos.x, pos.y, pos.z)
+
+  gl.Begin(gl.LINES)
+  defer gl.End()
+
+  gl.Color4ub(color.r, color.g, color.b, color.a)
+
+  gl.Vertex3f(0, 0, 0)
+  gl.Vertex3f(dir.x, dir.y, dir.z)
 }
 
 draw_cube_wires :: proc(pos: vec3, w, h, len: f32, color: Color) {
   x, y, z: f32 = 0.0, 0.0, 0.0
 
   gl.PushMatrix()
+  defer gl.PopMatrix()
 
   gl.Translatef(pos.x, pos.y, pos.z)
   //gl.Rotatef(45, 0, 1, 0);
 
   gl.Begin(gl.LINES)
+  defer gl.End()
+
   gl.Color4ub(color.r, color.g, color.b, color.a)
 
   // Front Face -----------------------------------------------------
@@ -177,7 +194,4 @@ draw_cube_wires :: proc(pos: vec3, w, h, len: f32, color: Color) {
   // Right Line
   gl.Vertex3f(x + w / 2, y - h / 2, z + len / 2)  // Top Right Front
   gl.Vertex3f(x + w / 2, y - h / 2, z - len / 2)  // Top Right Back
-  
-  gl.End()
-  gl.PopMatrix()
 }
