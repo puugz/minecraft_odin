@@ -4,7 +4,6 @@ import "core:fmt"
 import "core:math"
 import "core:math/linalg"
 import "vendor:glfw"
-import glfw_bindings "vendor:glfw/bindings"
 import rl "vendor:raylib"
 import gl "vendor:raylib/rlgl"
 import im "imgui"
@@ -20,21 +19,26 @@ RED      :: Color{ 230,  41,  55, 255 }
 RAYWHITE :: Color{ 245, 245, 245, 255 }
 DARKGRAY :: Color{  80,  80,  80, 255 }
 
-WindowHandle  :: glfw_bindings.WindowHandle
-MonitorHandle :: glfw_bindings.MonitorHandle
+vec2  :: [2]f32
+vec3  :: [3]f32
+vec4  :: [4]f32
 
-Vector3      :: rl.Vector3
-Vector2      :: rl.Vector2
-Color        :: rl.Color
+VEC3_RIGHT   :: vec3{1, 0, 0}
+VEC3_UP      :: vec3{0, 1, 0}
+VEC3_FORWARD :: vec3{0, 0, 1}
+
+Color :: rl.Color
 
 state := struct {
+  window:        glfw.WindowHandle,
   width, height: i32,
+  
   using options: struct {
     scale:     bool,
     wireframe: bool,
     wave:      bool,
     grid:      bool,
-  }
+  },
 } {
   width  = WIDTH,
   height = HEIGHT,
@@ -45,200 +49,24 @@ state := struct {
 }
 
 Camera :: struct {
-  using pos:  Vector3,
-  target, up: Vector3,
-  fovy:       f32,
-  projection: int,
-}
-
-draw_rectangle_v :: proc(pos, size: Vector2, color: Color) {
-  gl.Begin(gl.TRIANGLES)
-  defer gl.End()
-
-  gl.Color4ub(color.r, color.g, color.b, color.a)
-
-  gl.Vertex2f(pos.x, pos.y)
-  gl.Vertex2f(pos.x, pos.y + size.y)
-  gl.Vertex2f(pos.x + size.x, pos.y + size.y)
-
-  gl.Vertex2f(pos.x, pos.y)
-  gl.Vertex2f(pos.x + size.x, pos.y + size.y)
-  gl.Vertex2f(pos.x + size.x, pos.y)
-}
-
-draw_grid :: proc(slices: int, spacing: f32) {
-  half_slices := slices / 2
-
-  gl.Begin(gl.LINES)
-  defer gl.End()
-
-  for i in -half_slices..=half_slices {
-    if i == 0 {
-      gl.Color3f(0.5, 0.5, 0.5)
-      gl.Color3f(0.5, 0.5, 0.5)
-      gl.Color3f(0.5, 0.5, 0.5)
-      gl.Color3f(0.5, 0.5, 0.5)
-    } else {
-      gl.Color3f(0.75, 0.75, 0.75)
-      gl.Color3f(0.75, 0.75, 0.75)
-      gl.Color3f(0.75, 0.75, 0.75)
-      gl.Color3f(0.75, 0.75, 0.75)
-    }
-
-    gl.Vertex3f(cast(f32)i * spacing, 0.0, cast(f32)-half_slices * spacing)
-    gl.Vertex3f(cast(f32)i * spacing, 0.0, cast(f32) half_slices * spacing)
-
-    gl.Vertex3f(cast(f32)-half_slices * spacing, 0.0, cast(f32)i * spacing)
-    gl.Vertex3f(cast(f32) half_slices * spacing, 0.0, cast(f32)i * spacing)
-  }
-}
-
-draw_cube :: proc(pos: Vector3, width, height, length: f32, color: Color) {
-  x, y, z: f32 = 0.0, 0.0, 0.0
-
-  gl.PushMatrix()
-
-  // NOTE: Be careful! Function order matters (rotate -> scale -> translate)
-  gl.Translatef(pos.x, pos.y, pos.z)
-  //gl.Scalef(2.0f, 2.0f, 2.0f);
-  //gl.Rotatef(45, 0, 1, 0);
-
-  gl.Begin(gl.TRIANGLES)
-  gl.Color4ub(color.r, color.g, color.b, color.a)
-
-  // Front Face -----------------------------------------------------
-  gl.Vertex3f(x - width / 2, y - height / 2, z + length / 2)  // Bottom Left
-  gl.Vertex3f(x + width / 2, y - height / 2, z + length / 2)  // Bottom Right
-  gl.Vertex3f(x - width / 2, y + height / 2, z + length / 2)  // Top Left
-
-  gl.Vertex3f(x + width / 2, y + height / 2, z + length / 2)  // Top Right
-  gl.Vertex3f(x - width / 2, y + height / 2, z + length / 2)  // Top Left
-  gl.Vertex3f(x + width / 2, y - height / 2, z + length / 2)  // Bottom Right
-
-  // Back Face ------------------------------------------------------
-  gl.Vertex3f(x - width / 2, y - height / 2, z - length / 2)  // Bottom Left
-  gl.Vertex3f(x - width / 2, y + height / 2, z - length / 2)  // Top Left
-  gl.Vertex3f(x + width / 2, y - height / 2, z - length / 2)  // Bottom Right
-
-  gl.Vertex3f(x + width / 2, y + height / 2, z - length / 2)  // Top Right
-  gl.Vertex3f(x + width / 2, y - height / 2, z - length / 2)  // Bottom Right
-  gl.Vertex3f(x - width / 2, y + height / 2, z - length / 2)  // Top Left
-
-  // Top Face -------------------------------------------------------
-  gl.Vertex3f(x - width / 2, y + height / 2, z - length / 2)  // Top Left
-  gl.Vertex3f(x - width / 2, y + height / 2, z + length / 2)  // Bottom Left
-  gl.Vertex3f(x + width / 2, y + height / 2, z + length / 2)  // Bottom Right
-
-  gl.Vertex3f(x + width / 2, y + height / 2, z - length / 2)  // Top Right
-  gl.Vertex3f(x - width / 2, y + height / 2, z - length / 2)  // Top Left
-  gl.Vertex3f(x + width / 2, y + height / 2, z + length / 2)  // Bottom Right
-
-  // Bottom Face ----------------------------------------------------
-  gl.Vertex3f(x - width / 2, y - height / 2, z - length / 2)  // Top Left
-  gl.Vertex3f(x + width / 2, y - height / 2, z + length / 2)  // Bottom Right
-  gl.Vertex3f(x - width / 2, y - height / 2, z + length / 2)  // Bottom Left
-
-  gl.Vertex3f(x + width / 2, y - height / 2, z - length / 2)  // Top Right
-  gl.Vertex3f(x + width / 2, y - height / 2, z + length / 2)  // Bottom Right
-  gl.Vertex3f(x - width / 2, y - height / 2, z - length / 2)  // Top Left
-
-  // Right face -----------------------------------------------------
-  gl.Vertex3f(x + width / 2, y - height / 2, z - length / 2)  // Bottom Right
-  gl.Vertex3f(x + width / 2, y + height / 2, z - length / 2)  // Top Right
-  gl.Vertex3f(x + width / 2, y + height / 2, z + length / 2)  // Top Left
-
-  gl.Vertex3f(x + width / 2, y - height / 2, z + length / 2)  // Bottom Left
-  gl.Vertex3f(x + width / 2, y - height / 2, z - length / 2)  // Bottom Right
-  gl.Vertex3f(x + width / 2, y + height / 2, z + length / 2)  // Top Left
-
-  // Left Face ------------------------------------------------------
-  gl.Vertex3f(x - width / 2, y - height / 2, z - length / 2)  // Bottom Right
-  gl.Vertex3f(x - width / 2, y + height / 2, z + length / 2)  // Top Left
-  gl.Vertex3f(x - width / 2, y + height / 2, z - length / 2)  // Top Right
-
-  gl.Vertex3f(x - width / 2, y - height / 2, z + length / 2)  // Bottom Left
-  gl.Vertex3f(x - width / 2, y + height / 2, z + length / 2)  // Top Left
-  gl.Vertex3f(x - width / 2, y - height / 2, z - length / 2)  // Bottom Right
-
-  gl.End()
-  gl.PopMatrix()
-}
-
-draw_cube_wires :: proc(pos: Vector3, width, height, length: f32, color: Color) {
-  x, y, z: f32 = 0.0, 0.0, 0.0
-
-  gl.PushMatrix()
-
-  gl.Translatef(pos.x, pos.y, pos.z)
-  //gl.Rotatef(45, 0, 1, 0);
-
-  gl.Begin(gl.LINES)
-  gl.Color4ub(color.r, color.g, color.b, color.a)
-
-  // Front Face -----------------------------------------------------
-  // Bottom Line
-  gl.Vertex3f(x - width / 2, y - height / 2, z + length / 2)  // Bottom Left
-  gl.Vertex3f(x + width / 2, y - height / 2, z + length / 2)  // Bottom Right
-
-  // Left Line
-  gl.Vertex3f(x + width / 2, y - height / 2, z + length / 2)  // Bottom Right
-  gl.Vertex3f(x + width / 2, y + height / 2, z + length / 2)  // Top Right
-
-  // Top Line
-  gl.Vertex3f(x + width / 2, y + height / 2, z + length / 2)  // Top Right
-  gl.Vertex3f(x - width / 2, y + height / 2, z + length / 2)  // Top Left
-
-  // Right Line
-  gl.Vertex3f(x - width / 2, y + height / 2, z + length / 2)  // Top Left
-  gl.Vertex3f(x - width / 2, y - height / 2, z + length / 2)  // Bottom Left
-
-  // Back Face ------------------------------------------------------
-  // Bottom Line
-  gl.Vertex3f(x - width / 2, y - height / 2, z - length / 2)  // Bottom Left
-  gl.Vertex3f(x + width / 2, y - height / 2, z - length / 2)  // Bottom Right
-
-  // Left Line
-  gl.Vertex3f(x + width / 2, y - height / 2, z - length / 2)  // Bottom Right
-  gl.Vertex3f(x + width / 2, y + height / 2, z - length / 2)  // Top Right
-
-  // Top Line
-  gl.Vertex3f(x + width / 2, y + height / 2, z - length / 2)  // Top Right
-  gl.Vertex3f(x - width / 2, y + height / 2, z - length / 2)  // Top Left
-
-  // Right Line
-  gl.Vertex3f(x - width / 2, y + height / 2, z - length / 2)  // Top Left
-  gl.Vertex3f(x - width / 2, y - height / 2, z - length / 2)  // Bottom Left
-
-  // Top Face -------------------------------------------------------
-  // Left Line
-  gl.Vertex3f(x - width / 2, y + height / 2, z + length / 2)  // Top Left Front
-  gl.Vertex3f(x - width / 2, y + height / 2, z - length / 2)  // Top Left Back
-
-  // Right Line
-  gl.Vertex3f(x + width / 2, y + height / 2, z + length / 2)  // Top Right Front
-  gl.Vertex3f(x + width / 2, y + height / 2, z - length / 2)  // Top Right Back
-
-  // Bottom Face  ---------------------------------------------------
-  // Left Line
-  gl.Vertex3f(x - width / 2, y - height / 2, z + length / 2)  // Top Left Front
-  gl.Vertex3f(x - width / 2, y - height / 2, z - length / 2)  // Top Left Back
-
-  // Right Line
-  gl.Vertex3f(x + width / 2, y - height / 2, z + length / 2)  // Top Right Front
-  gl.Vertex3f(x + width / 2, y - height / 2, z - length / 2)  // Top Right Back
+  using pos: vec3,
+  vel, dir:  vec3,
+  right, up: vec3,
   
-  gl.End()
-  gl.PopMatrix()
+  yaw, pitch:     f32,
+  fov, near, far: f32,
 }
 
-on_window_resized :: proc "c" (window: WindowHandle, width, height: i32) {
-  if width == 0 || height == 0 {
-    return
+on_window_resized :: proc "c" (window: glfw.WindowHandle, width, height: i32) {
+  if width != 0 && height != 0 {
+    state.width  = width
+    state.height = height
+    gl.Viewport(0, 0, width, height)
   }
+}
 
-  state.width     = width
-  state.height    = height
-  gl.Viewport(0, 0, width, height)
+key_pressed :: proc(key: i32) -> bool {
+  return glfw.GetKey(state.window, key) == glfw.PRESS
 }
 
 // MARK:main
@@ -259,6 +87,7 @@ main :: proc() {
   window := glfw.CreateWindow(WIDTH, HEIGHT, "balls", nil, nil)
   assert(window != nil, "GLFW: Could not create window.")
   defer glfw.DestroyWindow(window)
+  state.window = window
 
   glfw.MakeContextCurrent(window)
   glfw.SwapInterval(1)
@@ -303,10 +132,15 @@ main :: proc() {
   gl.EnableDepthTest()
 
   camera := Camera{}
-  camera.pos    = { 50.0, 50.0, -50.0 }
-  camera.target = { 0.0, -35.0, 0.0 }
-  camera.up     = { 0.0, 1.0, 0.0 }
-  camera.fovy   = 90.0
+  camera.pos   = { 0, 50, -110 }
+  camera.right = VEC3_RIGHT
+  camera.up    = VEC3_UP
+  camera.dir   = VEC3_FORWARD
+  camera.yaw   = -90
+
+  camera.fov   = 90
+  camera.near  = 0.01
+  camera.far   = 1000.0
 
   time      := 0.0
   last_time := 0.0
@@ -325,6 +159,39 @@ main :: proc() {
     }
 
     glfw.PollEvents()
+    
+    current_time := glfw.GetTime()
+    delta_time   := current_time - last_time
+    last_time     = current_time
+    time         += delta_time
+
+    // camera movement
+    {
+      ACCELERATION :: 300
+      MAX_SPEED    :: 200
+      DAMPING      :: 10
+
+      input: vec3
+      if key_pressed(glfw.KEY_W)          do input += camera.dir
+      if key_pressed(glfw.KEY_S)          do input -= camera.dir
+      if key_pressed(glfw.KEY_D)          do input += camera.right
+      if key_pressed(glfw.KEY_A)          do input -= camera.right
+      if key_pressed(glfw.KEY_SPACE)      do input += camera.up
+      if key_pressed(glfw.KEY_LEFT_SHIFT) do input -= camera.up
+
+      if linalg.length(input) > 0 {
+        input = linalg.normalize(input)
+        camera.vel = input * math.min(MAX_SPEED, linalg.length(camera.vel) + ACCELERATION * auto_cast delta_time)
+      } else {
+        camera.vel -= camera.vel * (DAMPING * auto_cast delta_time)
+        if linalg.length(camera.vel) < 0.01 {
+          camera.vel = {0, 0, 0}
+        }
+      }
+      
+      camera.pos += camera.vel * auto_cast delta_time
+    }
+    
     gl.ClearScreenBuffers()
 
     if state.wireframe {
@@ -333,20 +200,9 @@ main :: proc() {
       gl.DisableWireMode()
     }
 
-    current_time := glfw.GetTime()
-    delta_time   := current_time - last_time
-    last_time     = current_time
-    time         += delta_time
-
-    {
-      color.r = cast(u8) ((math.sin(time) * 127.5 + 127.5))
-      color.g = cast(u8) ((math.sin(time + 2.0) * 127.5 + 127.5))
-      color.b = cast(u8) ((math.sin(time + 4.0) * 127.5 + 127.5))
-    }
-
     aspect_ratio := state.width / state.height
-    mat_proj     := rl.MatrixPerspective(camera.fovy * rl.DEG2RAD, auto_cast aspect_ratio, 0.01, 1000.0)
-    mat_view     := rl.MatrixLookAt(camera.pos, camera.target, camera.up)
+    mat_proj     := rl.MatrixPerspective(camera.fov * rl.DEG2RAD, auto_cast aspect_ratio, 0.01, 1000.0)
+    mat_view     := rl.MatrixLookAt(camera.pos, camera.pos + camera.dir, camera.up)
 
     gl.SetMatrixModelview(mat_view)
     gl.SetMatrixProjection(mat_proj)
@@ -366,13 +222,6 @@ main :: proc() {
           y_offset = auto_cast (math.sin(time * 16 + f64(x) * 0.5 + f64(z) * 0.5)) * 2.0 + 5
         }
 
-        // col := Color{
-        //   cast(u8) (x * 13 + z * 17) % 255,
-        //   cast(u8) (x * 23 + z * 29) % 255,
-        //   cast(u8) (x * 31 + z * 37) % 255,
-        //   255
-        // }
-
         col: Color
         col.r = cast(u8) ((math.sin(time + f64(x) + f64(z))       * 127.5 + 127.5))
         col.g = cast(u8) ((math.sin(time + f64(x) + f64(z) + 2.0) * 127.5 + 127.5))
@@ -391,7 +240,6 @@ main :: proc() {
       }
     }
 
-    // draw_cube_wires(cube_position, 2.0, 2.0, 2.0, RAYWHITE)
     if state.grid {
       draw_grid(100, 1.0)
     }
@@ -443,6 +291,4 @@ main :: proc() {
 
     glfw.SwapBuffers(window)
   }
-
-  a := 5
 }
